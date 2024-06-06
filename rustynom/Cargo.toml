@@ -1,0 +1,11 @@
+[package]
+name = "rustynom"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rustynom"
+path = "src/lib.rs"
+
+[dependencies]
+rustynom_macros = { path = "../rustynom_macros" }

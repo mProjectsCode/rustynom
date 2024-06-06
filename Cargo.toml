@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "rustynom",
+    "rustynom_macros"
+]
