@@ -1,20 +1,28 @@
-use rustynom::{AndParser2, EofParser, ParserCombinator, RecParser, SameOrParser2, StringParser};
+use rustynom::{
+    atomic_parsers::{EofParser, StringParser},
+    combinator_parsers::{AndParser2, SameOrParser2},
+    parser::ParserCombinator,
+    transformation_parsers::RecParser,
+};
 
 #[test]
 fn simple_recursion() {
     let a = StringParser::new("a".to_owned());
-    let mapped_eof = EofParser::new().owned_map(|_| vec!["eof".to_owned()]);
-    let rec = RecParser::<Vec<String>>::new();
+    let mapped_eof = EofParser::new().map(|_| vec!["eof".to_owned()]);
 
-    let mapped_and = AndParser2::new(&a, &rec).owned_map(|(a, b)| {
-        let mut result = vec![a];
-        result.extend(b);
-        result
+    let rec = RecParser::new(|rec_ref| {
+        let and = AndParser2::new(a, rec_ref).map(|(a, b)| {
+            let mut result = vec![a];
+            result.extend(b);
+            result
+        });
+
+        SameOrParser2::new(mapped_eof, and)
     });
 
-    let or = SameOrParser2::new(&mapped_eof, &mapped_and);
-
-    rec.set(&or);
+    let result = rec.parse_str("");
+    assert!(result.is_success());
+    assert_eq!(result.unwrap_success(), vec!["eof"]);
 
     let result = rec.parse_str("a");
     assert!(result.is_success());

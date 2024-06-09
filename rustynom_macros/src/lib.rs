@@ -1,48 +1,48 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 
-// pub struct AndParser<'a, A, B> {
-//     a: Box<&'a dyn Parser<A>>,
-//     b: Box<&'a dyn Parser<B>>,
-// }
-
-// impl<'a, A, B> AndParser<'a, A, B> {
-//     pub fn new(a: &'a dyn Parser<A>, b: &'a dyn Parser<B>) -> AndParser<'a, A, B> {
-//         AndParser {
-//             a: Box::from(a),
-//             b: Box::from(b),
-//         }
-//     }
-// }
-
-// impl<'a, A, B> Parser<(A, B)> for AndParser<'a, A, B> {
-//     fn parse(&self, context: &mut ParsingContext) -> ParseResult<(A, B)> {
-//         match (self.a.parse(context), self.b.parse(context)) {
-//             (ParseResult::Success(a), ParseResult::Success(b)) => ParseResult::Success((a, b)),
-//             (ParseResult::Failure(f), _) => ParseResult::Failure(f),
-//             (_, ParseResult::Failure(f)) => ParseResult::Failure(f),
-//         }
-//     }
-// }
-
 #[proc_macro]
 pub fn and_parser(input: TokenStream) -> TokenStream {
     let input = input.to_string();
     let n = input.parse::<usize>().unwrap();
 
     // construct the type arguments T1, T2, ..., Tn
+    let full_type_args: String = (1..=n)
+        .map(|i| format!("T{}Parser, T{}", i, i))
+        .collect::<Vec<String>>()
+        .join(", ");
+
     let type_args: String = (1..=n)
         .map(|i| format!("T{}", i))
+        .collect::<Vec<String>>()
+        .join(", ");
+
+    let where_clause: String = (1..=n)
+        .map(|i| format!("T{}Parser: RawParser<T{}>, T{}: Clone", i, i, i))
         .collect::<Vec<String>>()
         .join(", ");
 
     let mut output = String::new();
 
     // construct the struct definition
-    output.push_str(format!("pub struct AndParser{}<'a, {}> {{", n, type_args).as_str());
+    output.push_str("#[derive(Clone)]\n");
+    output.push_str(
+        format!(
+            "pub struct AndParser{}<{}> where {} {{",
+            n, full_type_args, where_clause
+        )
+        .as_str(),
+    );
     output.push_str(
         (1..=n)
-            .map(|i| format!("p{}: &'a dyn Parser<T{}>,", i, i))
+            .map(|i| format!("p{}: T{}Parser,", i, i))
+            .collect::<Vec<String>>()
+            .join("")
+            .as_str(),
+    );
+    output.push_str(
+        (1..=n)
+            .map(|i| format!("__phantom{}: std::marker::PhantomData<T{}>,", i, i))
             .collect::<Vec<String>>()
             .join("")
             .as_str(),
@@ -52,20 +52,20 @@ pub fn and_parser(input: TokenStream) -> TokenStream {
     // construct the impl block for AndParser
     output.push_str(
         format!(
-            "impl<'a, {}> AndParser{}<'a, {}> {{",
-            type_args, n, type_args
+            "impl<{}> AndParser{}<{}> where {} {{",
+            full_type_args, n, full_type_args, where_clause
         )
         .as_str(),
     );
     output.push_str(
         format!(
-            "pub fn new({}) -> AndParser{}<'a, {}> {{",
+            "pub fn new({}) -> AndParser{}<{}> {{",
             (1..=n)
-                .map(|i| format!("p{}: &'a dyn Parser<T{}>", i, i))
+                .map(|i| format!("p{}: T{}Parser", i, i))
                 .collect::<Vec<String>>()
                 .join(", "),
             n,
-            type_args
+            full_type_args
         )
         .as_str(),
     );
@@ -77,13 +77,20 @@ pub fn and_parser(input: TokenStream) -> TokenStream {
             .join("")
             .as_str(),
     );
+    output.push_str(
+        (1..=n)
+            .map(|i| format!("__phantom{}: std::marker::PhantomData,", i))
+            .collect::<Vec<String>>()
+            .join("")
+            .as_str(),
+    );
     output.push_str("}}}\n");
 
     // construct the impl block for Parser
     output.push_str(
         format!(
-            "impl<'a, {}> Parser<({})> for AndParser{}<'a, {}> {{",
-            type_args, type_args, n, type_args
+            "impl<{}> RawParser<({})> for AndParser{}<{}> where {} {{",
+            full_type_args, type_args, n, full_type_args, where_clause
         )
         .as_str(),
     );
@@ -132,50 +139,24 @@ pub fn and_parser(input: TokenStream) -> TokenStream {
     output.parse().unwrap()
 }
 
-// #[derive(Debug, Clone, PartialEq)]
-// pub enum Variant<T1, T2> {
-//     V1(T1),
-//     V2(T2),
-// }
-
-// pub struct OrParser<'a, A, B> {
-//     a: Box<&'a dyn Parser<A>>,
-//     b: Box<&'a dyn Parser<B>>,
-// }
-
-// impl<'a, A, B> OrParser<'a, A, B> {
-//     pub fn new(a: &'a dyn Parser<A>, b: &'a dyn Parser<B>) -> OrParser<'a, A, B> {
-//         OrParser {
-//             a: Box::from(a),
-//             b: Box::from(b),
-//         }
-//     }
-// }
-
-// impl<'a, A, B> Parser<Variant<A, B>> for OrParser<'a, A, B> {
-//     fn parse(&self, context: &mut ParsingContext) -> ParseResult<Variant<A, B>> {
-//         let mut cloned_context = context.clone();
-//         let a = self.a.parse(&mut cloned_context);
-
-//         if let ParseResult::Success(a) = a {
-//             return context.succeed_at(cloned_context.position.index, Variant::V1(a));
-//         }
-
-//         match self.b.parse(context) {
-//             ParseResult::Success(b) => ParseResult::Success(Variant::V2(b)),
-//             ParseResult::Failure(f) => ParseResult::Failure(f),
-//         }
-//     }
-// }
-
 #[proc_macro]
 pub fn or_parser(input: TokenStream) -> TokenStream {
     let input = input.to_string();
     let n = input.parse::<usize>().unwrap();
 
     // construct the type arguments T1, T2, ..., Tn
+    let full_type_args: String = (1..=n)
+        .map(|i| format!("T{}Parser, T{}", i, i))
+        .collect::<Vec<String>>()
+        .join(", ");
+
     let type_args: String = (1..=n)
         .map(|i| format!("T{}", i))
+        .collect::<Vec<String>>()
+        .join(", ");
+
+    let where_clause: String = (1..=n)
+        .map(|i| format!("T{}Parser: RawParser<T{}>, T{}: Clone", i, i, i))
         .collect::<Vec<String>>()
         .join(", ");
 
@@ -194,10 +175,24 @@ pub fn or_parser(input: TokenStream) -> TokenStream {
     output.push_str("}\n");
 
     // construct the struct definition
-    output.push_str(format!("pub struct OrParser{}<'a, {}> {{", n, type_args).as_str());
+    output.push_str("#[derive(Clone)]\n");
+    output.push_str(
+        format!(
+            "pub struct OrParser{}<{}> where {} {{",
+            n, full_type_args, where_clause
+        )
+        .as_str(),
+    );
     output.push_str(
         (1..=n)
-            .map(|i| format!("p{}: &'a dyn Parser<T{}>,", i, i))
+            .map(|i| format!("p{}: T{}Parser,", i, i))
+            .collect::<Vec<String>>()
+            .join("")
+            .as_str(),
+    );
+    output.push_str(
+        (1..=n)
+            .map(|i| format!("__phantom{}: std::marker::PhantomData<T{}>,", i, i))
             .collect::<Vec<String>>()
             .join("")
             .as_str(),
@@ -207,20 +202,20 @@ pub fn or_parser(input: TokenStream) -> TokenStream {
     // construct the impl block for OrParser
     output.push_str(
         format!(
-            "impl<'a, {}> OrParser{}<'a, {}> {{",
-            type_args, n, type_args
+            "impl<{}> OrParser{}<{}> where {} {{",
+            full_type_args, n, full_type_args, where_clause
         )
         .as_str(),
     );
     output.push_str(
         format!(
-            "pub fn new({}) -> OrParser{}<'a, {}> {{",
+            "pub fn new({}) -> OrParser{}<{}> {{",
             (1..=n)
-                .map(|i| format!("p{}: &'a dyn Parser<T{}>", i, i))
+                .map(|i| format!("p{}: T{}Parser", i, i))
                 .collect::<Vec<String>>()
                 .join(", "),
             n,
-            type_args
+            full_type_args
         )
         .as_str(),
     );
@@ -232,13 +227,20 @@ pub fn or_parser(input: TokenStream) -> TokenStream {
             .join("")
             .as_str(),
     );
+    output.push_str(
+        (1..=n)
+            .map(|i| format!("__phantom{}: std::marker::PhantomData,", i))
+            .collect::<Vec<String>>()
+            .join("")
+            .as_str(),
+    );
     output.push_str("}}}\n");
 
     // construct the impl block for Parser
     output.push_str(
         format!(
-            "impl<'a, {}> Parser<Variant{}<{}>> for OrParser{}<'a, {}> {{",
-            type_args, n, type_args, n, type_args
+            "impl<{}> RawParser<Variant{}<{}>> for OrParser{}<{}> where {} {{",
+            full_type_args, n, type_args, n, full_type_args, where_clause
         )
         .as_str(),
     );
@@ -290,42 +292,78 @@ pub fn or_parser(input: TokenStream) -> TokenStream {
 
     // Same Type
 
+    let mut full_same_type_args: String = (1..=n)
+        .map(|i| format!("T{}Parser", i))
+        .collect::<Vec<String>>()
+        .join(", ");
+
+    full_same_type_args.push_str(", T");
+
+    let mut full_where_clause: String = (1..=n)
+        .map(|i| format!("T{}Parser: RawParser<T>", i))
+        .collect::<Vec<String>>()
+        .join(", ");
+
+    full_where_clause.push_str(", T: Clone");
+
     // construct the struct definition
-    output.push_str(format!("pub struct SameOrParser{}<'a, T> {{", n).as_str());
+    output.push_str("#[derive(Clone)]\n");
+    output.push_str(
+        format!(
+            "pub struct SameOrParser{}<{}> where {} {{",
+            n, full_same_type_args, full_where_clause
+        )
+        .as_str(),
+    );
     output.push_str(
         (1..=n)
-            .map(|i| format!("p{}: Box<&'a dyn Parser<T>>,", i))
+            .map(|i| format!("p{}: T{}Parser,", i, i))
             .collect::<Vec<String>>()
             .join("")
             .as_str(),
     );
+    output.push_str("__phantom: std::marker::PhantomData<T>,");
     output.push_str("}\n");
 
     // construct the impl block for OrParser
-    output.push_str(format!("impl<'a, T> SameOrParser{}<'a, T> {{", n).as_str());
     output.push_str(
         format!(
-            "pub fn new({}) -> SameOrParser{}<'a, T> {{",
+            "impl<{}> SameOrParser{}<{}> where {} {{",
+            full_same_type_args, n, full_same_type_args, full_where_clause
+        )
+        .as_str(),
+    );
+    output.push_str(
+        format!(
+            "pub fn new({}) -> SameOrParser{}<{}> {{",
             (1..=n)
-                .map(|i| format!("p{}: &'a dyn Parser<T>", i))
+                .map(|i| format!("p{}: T{}Parser", i, i))
                 .collect::<Vec<String>>()
                 .join(", "),
-            n
+            n,
+            full_same_type_args
         )
         .as_str(),
     );
     output.push_str(format!("SameOrParser{} {{", n).as_str());
     output.push_str(
         (1..=n)
-            .map(|i| format!("p{}: Box::from(p{}),", i, i))
+            .map(|i| format!("p{},", i))
             .collect::<Vec<String>>()
             .join("")
             .as_str(),
     );
+    output.push_str("__phantom: std::marker::PhantomData,");
     output.push_str("}}}\n");
 
     // construct the impl block for Parser
-    output.push_str(format!("impl<'a, T> Parser<T> for SameOrParser{}<'a, T> {{", n).as_str());
+    output.push_str(
+        format!(
+            "impl<{}> RawParser<T> for SameOrParser{}<{}> where {} {{",
+            full_same_type_args, n, full_same_type_args, full_where_clause
+        )
+        .as_str(),
+    );
     output.push_str("fn parse(&self, context: &mut ParsingContext) -> ParseResult<T> {");
 
     for i in 1..n {

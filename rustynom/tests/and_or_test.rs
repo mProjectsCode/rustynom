@@ -1,10 +1,12 @@
-use rustynom::{AndParser2, CharParser, OrParser2, ParserCombinator};
+use rustynom::{
+    atomic_parsers::CharParser,
+    combinator_parsers::{AndParser2, OrParser2},
+    parser::ParserCombinator,
+};
 
 #[test]
 fn simple_and() {
-    let a = CharParser::new('a');
-    let b = CharParser::new('b');
-    let parser = AndParser2::new(&a, &b);
+    let parser = AndParser2::new(CharParser::new('a'), CharParser::new('b'));
 
     let result = parser.parse_str("ab");
     assert!(result.is_success());
@@ -24,9 +26,7 @@ fn simple_and() {
 
 #[test]
 fn simple_or() {
-    let a = CharParser::new('a');
-    let b = CharParser::new('b');
-    let parser = OrParser2::new(&a, &b);
+    let parser = OrParser2::new(CharParser::new('a'), CharParser::new('b'));
 
     let result = parser.parse_str("a");
     assert!(result.is_success());

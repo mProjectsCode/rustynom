@@ -1,9 +1,10 @@
-use rustynom::{CharParser, ManyParser, ParserCombinator};
+use rustynom::{
+    atomic_parsers::CharParser, parser::ParserCombinator, transformation_parsers::ManyParser,
+};
 
 #[test]
 fn simple_many() {
-    let a = CharParser::new('a');
-    let parser = ManyParser::new(&a);
+    let parser = ManyParser::new(CharParser::new('a'));
 
     let result = parser.parse_str("aaa");
     assert!(result.is_success());
