@@ -5,7 +5,6 @@ use crate::{
     ParseResult, ParsingContext, ParsingPosition,
 };
 
-// TODO: This can probably done without the dynamic dispatch, but it's going to be a lot of explicit types
 pub trait ParserCombinator<TParser: Parser<T>, T: Clone> {
     fn and<UParser: Parser<U>, U: Clone>(self, other: UParser) -> impl Parser<(T, U)>;
     fn or<UParser: Parser<U>, U: Clone>(self, other: UParser) -> impl Parser<Variant2<T, U>>;

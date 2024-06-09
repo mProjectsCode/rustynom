@@ -131,23 +131,6 @@ impl ParsingContext {
         ParseResult::Failure(ParseFailure::new(self.position.clone(), expected))
     }
 
-    // pub fn merge<T>(&self, a: ParseResult<T>, b: Option<ParseResult<T>>) -> ParseResult<T> {
-    //     if b.is_none() {
-    //         return a;
-    //     }
-    //     let b = b.unwrap();
-
-    //     if b.is_success() {
-    //         return b;
-    //     }
-
-    //     if a.is_success() {
-    //         return a;
-    //     }
-
-    //     ParseResult::Failure(self.merge_failures(a.unwrap_failure(), b.unwrap_failure()))
-    // }
-
     pub fn merge_failures(&self, mut a: ParseFailure, b: ParseFailure) -> ParseFailure {
         match a.furthest.cmp(&b.furthest) {
             std::cmp::Ordering::Less => b,
