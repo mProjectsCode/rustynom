@@ -128,10 +128,12 @@ where
 impl<TParser: RawParser<T>, T: Clone> RawParser<Vec<T>> for ManyParser<TParser, T> {
     fn parse(&self, context: &mut ParsingContext) -> ParseResult<Vec<T>> {
         let mut result = Vec::new();
-        while let ParseResult::Success(t) = self.parser.parse(context) {
+        let mut cloned_context = context.clone();
+        while let ParseResult::Success(t) = self.parser.parse(&mut cloned_context) {
             result.push(t);
+            context.move_to_position(cloned_context.position.clone());
         }
 
-        ParseResult::Success(result)
+        context.succeed_offset(0, result)
     }
 }

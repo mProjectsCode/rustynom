@@ -2,6 +2,7 @@ pub mod atomic_parsers;
 pub mod combinator_parsers;
 pub mod parser;
 pub mod transformation_parsers;
+pub mod utility_parsers;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ParsingPosition {
@@ -72,15 +73,15 @@ impl<T> ParseResult<T> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ParsingContext {
-    input: Vec<char>,
-    position: ParsingPosition,
+pub struct ParsingContext<'a> {
+    input: &'a Vec<char>,
+    pub position: ParsingPosition,
 }
 
-impl ParsingContext {
-    pub fn new(input: String, position: ParsingPosition) -> ParsingContext {
+impl<'a> ParsingContext<'a> {
+    pub fn new(input: &'a Vec<char>, position: ParsingPosition) -> ParsingContext<'a> {
         ParsingContext {
-            input: input.chars().collect(),
+            input,
             position,
         }
     }

@@ -101,40 +101,51 @@ pub fn and_parser(input: TokenStream) -> TokenStream {
         )
         .as_str(),
     );
-    output.push_str("match (");
-    output.push_str(
-        (1..=n)
-            .map(|i| format!("self.p{}.parse(context),", i))
-            .collect::<Vec<String>>()
-            .join("")
-            .as_str(),
-    );
-    output.push_str(") {");
-    output.push_str(
-        format!(
-            "({}) => ParseResult::Success(({})),",
-            (1..=n)
-                .map(|i| format!("ParseResult::Success(p{})", i))
-                .collect::<Vec<String>>()
-                .join(", "),
-            (1..=n)
-                .map(|i| format!("p{}", i))
-                .collect::<Vec<String>>()
-                .join(", ")
-        )
-        .as_str(),
-    );
+    // output.push_str("match (");
+    // output.push_str(
+    //     (1..=n)
+    //         .map(|i| format!("self.p{}.parse(context),", i))
+    //         .collect::<Vec<String>>()
+    //         .join("")
+    //         .as_str(),
+    // );
+    // output.push_str(") {");
+    // output.push_str(
+    //     format!(
+    //         "({}) => ParseResult::Success(({})),",
+    //         (1..=n)
+    //             .map(|i| format!("ParseResult::Success(p{})", i))
+    //             .collect::<Vec<String>>()
+    //             .join(", "),
+    //         (1..=n)
+    //             .map(|i| format!("p{}", i))
+    //             .collect::<Vec<String>>()
+    //             .join(", ")
+    //     )
+    //     .as_str(),
+    // );
+    // for i in 1..=n {
+    //     output.push_str(
+    //         format!(
+    //             "({}ParseResult::Failure(f),{}) => ParseResult::Failure(f),",
+    //             "_,".repeat(i - 1),
+    //             "_,".repeat(n - i)
+    //         )
+    //         .as_str(),
+    //     );
+    // }
+
     for i in 1..=n {
-        output.push_str(
-            format!(
-                "({}ParseResult::Failure(f),{}) => ParseResult::Failure(f),",
-                "_,".repeat(i - 1),
-                "_,".repeat(n - i)
-            )
-            .as_str(),
-        );
+        output.push_str(format!("let r{} = self.p{}.parse(context);", i, i).as_str());
+        output.push_str(format!("if let ParseResult::Failure(x) = r{} {{", i).as_str());
+        output.push_str("return ParseResult::Failure(x);");
+        output.push_str("}");
+        output.push_str(format!("let s{} = r{}.unwrap_success();", i, i).as_str());
     }
-    output.push_str("}}}");
+
+    output.push_str(format!("ParseResult::Success(({}))", (1..=n).map(|i| format!("s{}", i)).collect::<Vec<String>>().join(", ")).as_str());
+
+    output.push_str("}}");
 
     output.parse().unwrap()
 }
