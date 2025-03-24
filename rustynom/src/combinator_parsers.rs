@@ -1,4 +1,4 @@
-use crate::{parser::RawParser, ParseResult, ParsingContext};
+use crate::{ParseResult, ParsingContext, parser::RawParser};
 use rustynom_macros::{and_parser, or_parser};
 
 // ---------------

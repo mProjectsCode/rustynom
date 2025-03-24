@@ -1,34 +1,69 @@
+use crate::{ParseResult, ParsingContext, parser::RawParser};
+
 // ---------------
 // String parser
 // ---------------
 
-use crate::{parser::RawParser, ParseResult, ParsingContext};
-
 #[derive(Clone)]
-pub struct StringParser {
+pub struct StringParser<const OUTPUT: bool = true> {
     string: String,
-    chars: Vec<char>
+    chars: Vec<char>,
 }
 
-impl StringParser {
-    pub fn new(string: String) -> StringParser {
-        StringParser { string: string.clone(), chars: string.chars().collect() }
+impl<const OUTPUT: bool> StringParser<OUTPUT> {
+    pub fn new(string: String) -> StringParser<OUTPUT> {
+        StringParser {
+            string: string.clone(),
+            chars: string.chars().collect(),
+        }
     }
 }
 
-impl RawParser<String> for StringParser {
+impl RawParser<String> for StringParser<true> {
     fn parse(&self, context: &mut ParsingContext) -> ParseResult<String> {
-        for (i, c) in self.chars.iter().enumerate() {
-            if context.position.index + i >= context.input.len() {
-                return context.fail_at(context.position.index, vec![self.string.clone()]);
-            }
-
-            if *c != context.input[context.position.index + i] {
-                return context.fail_at(context.position.index, vec![self.string.clone()]);
-            }
+        match context.slice_from_current().starts_with(&self.chars) {
+            true => context.succeed_offset(self.chars.len(), self.string.clone()),
+            false => context.fail_offset(0, vec![self.string.clone()]),
         }
+    }
+}
 
-        context.succeed_offset(self.chars.len(), self.string.clone())
+impl RawParser<()> for StringParser<false> {
+    fn parse(&self, context: &mut ParsingContext) -> ParseResult<()> {
+        match context.slice_from_current().starts_with(&self.chars) {
+            true => context.succeed_offset(self.chars.len(), ()),
+            false => context.fail_offset(0, vec![self.string.clone()]),
+        }
+    }
+}
+
+// ---------------
+// String parser with custom result
+// ---------------
+
+#[derive(Clone)]
+pub struct StringMapParser<T: Clone> {
+    result: T,
+    string: String,
+    chars: Vec<char>,
+}
+
+impl<T: Clone> StringMapParser<T> {
+    pub fn new(string: String, result: T) -> StringMapParser<T> {
+        StringMapParser {
+            result,
+            string: string.clone(),
+            chars: string.chars().collect(),
+        }
+    }
+}
+
+impl<T: Clone> RawParser<T> for StringMapParser<T> {
+    fn parse(&self, context: &mut ParsingContext) -> ParseResult<T> {
+        match context.slice_from_current().starts_with(&self.chars) {
+            true => context.succeed_offset(self.chars.len(), self.result.clone()),
+            false => context.fail_offset(0, vec![self.string.clone()]),
+        }
     }
 }
 
@@ -37,24 +72,38 @@ impl RawParser<String> for StringParser {
 // ---------------
 
 #[derive(Clone)]
-pub struct CharParser {
+pub struct CharParser<const OUTPUT: bool = true> {
     c: char,
 }
 
-impl CharParser {
-    pub fn new(c: char) -> CharParser {
+impl<const OUTPUT: bool> CharParser<OUTPUT> {
+    pub fn new(c: char) -> CharParser<OUTPUT> {
         CharParser { c }
     }
 }
 
-impl RawParser<char> for CharParser {
+impl RawParser<char> for CharParser<true> {
     fn parse(&self, context: &mut ParsingContext) -> ParseResult<char> {
         if context.at_eof() {
             return context.fail_offset(0, vec![self.c.to_string()]);
         }
 
-        if self.c == context.input[context.position.index] {
+        if &self.c == context.current() {
             context.succeed_offset(1, self.c)
+        } else {
+            context.fail_offset(0, vec![self.c.to_string()])
+        }
+    }
+}
+
+impl RawParser<()> for CharParser<false> {
+    fn parse(&self, context: &mut ParsingContext) -> ParseResult<()> {
+        if context.at_eof() {
+            return context.fail_offset(0, vec![self.c.to_string()]);
+        }
+
+        if &self.c == context.current() {
+            context.succeed_offset(1, ())
         } else {
             context.fail_offset(0, vec![self.c.to_string()])
         }

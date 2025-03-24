@@ -5,7 +5,7 @@ use rustynom::{
 
 #[test]
 fn simple_many() {
-    let parser = ManyParser::new(CharParser::new('a'));
+    let parser = ManyParser::new(CharParser::<true>::new('a'));
 
     let result = parser.parse_str("aaa");
     assert!(result.is_success());
@@ -42,7 +42,7 @@ fn simple_many_2() {
 
 #[test]
 fn simple_many_3() {
-    let parser = ManyParser::new(CharParser::new('a').skip(CharParser::new('b')));
+    let parser = ManyParser::new(CharParser::<true>::new('a').skip(CharParser::new('b')));
 
     let result = parser.parse_str("ab");
     assert!(result.is_success());
@@ -59,7 +59,9 @@ fn simple_many_3() {
 
 #[test]
 fn simple_many_4() {
-    let parser = CharParser::new('a').skip(CharParser::new('b')).many();
+    let parser = CharParser::<true>::new('a')
+        .skip(CharParser::new('b'))
+        .many();
 
     let result = parser.parse_str("ab");
     assert!(result.is_success());
@@ -76,7 +78,7 @@ fn simple_many_4() {
 
 #[test]
 fn simple_many_5() {
-    let parser = CharParser::new('a')
+    let parser = CharParser::<true>::new('a')
         .skip(CharParser::new('b'))
         .many()
         .skip(CharParser::new('c'));
@@ -105,6 +107,10 @@ fn simple_separated_by() {
     let result = parser.parse_str("a,a,a");
     assert!(result.is_success());
     assert_eq!(result.unwrap_success(), vec!['a', 'a', 'a']);
+
+    let result = parser.parse_str("a");
+    assert!(result.is_success());
+    assert_eq!(result.unwrap_success(), vec!['a']);
 
     let result: rustynom::ParseResult<Vec<char>> = parser.parse_str("");
     assert!(result.is_failure());

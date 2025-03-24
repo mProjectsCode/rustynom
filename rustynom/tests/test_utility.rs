@@ -15,7 +15,7 @@ fn simple_uint() {
     let result = parser.parse_str("abc");
     assert!(result.is_failure());
     let failure = result.unwrap_failure();
-    assert_eq!(failure.furthest.index, 0);
+    assert_eq!(failure.furthest.index(), 0);
 }
 
 #[test]
@@ -45,5 +45,5 @@ fn simple_float() {
     let result = parser.parse_str("abc");
     assert!(result.is_failure());
     let failure = result.unwrap_failure();
-    assert_eq!(failure.furthest.index, 0);
+    assert_eq!(failure.furthest.index(), 0);
 }

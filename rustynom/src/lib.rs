@@ -5,19 +5,31 @@ pub mod transformation_parsers;
 pub mod utility_parsers;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ParsingPosition {
-    pub index: usize,
-    pub line: u32,
-    pub column: u32,
-}
+pub struct ParsingPosition(usize);
 
 impl ParsingPosition {
-    pub fn new(index: usize, line: u32, column: u32) -> ParsingPosition {
-        ParsingPosition {
-            index,
-            line,
-            column,
-        }
+    pub fn new(index: usize) -> ParsingPosition {
+        ParsingPosition(index)
+    }
+
+    pub fn index(&self) -> usize {
+        self.0
+    }
+
+    pub fn advance_by(&mut self, offset: usize) {
+        self.0 += offset;
+    }
+}
+
+impl Default for ParsingPosition {
+    fn default() -> Self {
+        ParsingPosition::new(0)
+    }
+}
+
+impl From<usize> for ParsingPosition {
+    fn from(index: usize) -> Self {
+        ParsingPosition::new(index)
     }
 }
 
@@ -40,16 +52,16 @@ impl ParseFailure {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ParseResult<T> {
+pub enum GenericParseResult<T, F> {
     Success(T),
-    Failure(ParseFailure),
+    Failure(F),
 }
 
-impl<T> ParseResult<T> {
+impl<T, F> GenericParseResult<T, F> {
     pub fn is_success(&self) -> bool {
         match self {
-            ParseResult::Success(_) => true,
-            ParseResult::Failure(_) => false,
+            GenericParseResult::Success(_) => true,
+            GenericParseResult::Failure(_) => false,
         }
     }
 
@@ -59,30 +71,79 @@ impl<T> ParseResult<T> {
 
     pub fn unwrap_success(self) -> T {
         match self {
-            ParseResult::Success(t) => t,
-            ParseResult::Failure(_) => panic!("Called unwrap_success on a ParseResult::Failure"),
+            GenericParseResult::Success(t) => t,
+            GenericParseResult::Failure(_) => {
+                panic!("Called unwrap_success on a GenericParseResult::Failure")
+            }
         }
     }
 
-    pub fn unwrap_failure(self) -> ParseFailure {
+    pub fn unwrap_failure(self) -> F {
         match self {
-            ParseResult::Failure(f) => f,
-            ParseResult::Success(_) => panic!("Called unwrap_failure on a ParseResult::Success"),
+            GenericParseResult::Failure(f) => f,
+            GenericParseResult::Success(_) => {
+                panic!("Called unwrap_failure on a GenericParseResult::Success")
+            }
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+pub type ParseResult<T> = GenericParseResult<T, ParseFailure>;
+
+#[derive(Debug, PartialEq)]
 pub struct ParsingContext<'a> {
-    input: &'a Vec<char>,
+    input: &'a [char],
     pub position: ParsingPosition,
 }
 
+impl<'a> Clone for ParsingContext<'a> {
+    fn clone(&self) -> Self {
+        Self {
+            input: self.input,
+            position: self.position.clone(),
+        }
+    }
+}
+
 impl<'a> ParsingContext<'a> {
-    pub fn new(input: &'a Vec<char>, position: ParsingPosition) -> ParsingContext<'a> {
-        ParsingContext {
-            input,
-            position,
+    pub fn new(input: &'a [char], position: ParsingPosition) -> ParsingContext<'a> {
+        ParsingContext { input, position }
+    }
+
+    pub fn slice_from_current(&self) -> &[char] {
+        &self.input[self.position.index()..]
+    }
+
+    pub fn slice_from_current_to(&self, index: usize) -> &[char] {
+        &self.input[self.position.index()..index]
+    }
+
+    pub fn current(&self) -> &char {
+        &self.input[self.position.index()]
+    }
+
+    pub fn current_eq(&self, c: &char) -> bool {
+        if self.at_eof() {
+            false
+        } else {
+            &self.input[self.position.index()] == c
+        }
+    }
+
+    pub fn test_current(&self, test_fn: impl Fn(char) -> bool) -> bool {
+        if self.at_eof() {
+            false
+        } else {
+            test_fn(self.input[self.position.index()])
+        }
+    }
+
+    pub fn current_eq_slice(&self, slice: &[char]) -> bool {
+        if self.at_eof() {
+            false
+        } else {
+            let current = &self.input[self.position.index()..];
+            current.len() >= slice.len() && current.starts_with(slice)
         }
     }
 
@@ -91,44 +152,38 @@ impl<'a> ParsingContext<'a> {
     }
 
     pub fn at_eof(&self) -> bool {
-        self.position.index >= self.input.len()
+        self.position.index() >= self.input.len()
     }
 
-    fn advance_to(&mut self, index: usize) {
-        if index < self.position.index {
-            panic!("Cannot advance to a position before the current position");
-        }
-        if index == self.position.index {
-            return;
-        }
+    fn advance_to(&mut self, position: ParsingPosition) {
+        self.position = position;
+    }
 
-        for i in self.position.index..index {
-            if self.input[i] == '\n' {
-                self.position.line += 1;
-                self.position.column = 0;
-            } else {
-                self.position.column += 1;
-            }
-        }
-
-        self.position.index = index;
+    fn advance_by(&mut self, offset: usize) {
+        self.position.advance_by(offset);
     }
 
     pub fn succeed_offset<T>(&mut self, offset: usize, result: T) -> ParseResult<T> {
-        self.succeed_at(self.position.index + offset, result)
-    }
-
-    pub fn fail_offset<T>(&mut self, offset: usize, expected: Vec<String>) -> ParseResult<T> {
-        self.fail_at(self.position.index + offset, expected)
-    }
-
-    pub fn succeed_at<T>(&mut self, index: usize, result: T) -> ParseResult<T> {
-        self.advance_to(index);
+        self.advance_by(offset);
         ParseResult::Success(result)
     }
 
-    pub fn fail_at<T>(&mut self, index: usize, expected: Vec<String>) -> ParseResult<T> {
-        self.advance_to(index);
+    pub fn fail_offset<T>(&mut self, offset: usize, expected: Vec<String>) -> ParseResult<T> {
+        self.advance_by(offset);
+        ParseResult::Failure(ParseFailure::new(self.position.clone(), expected))
+    }
+
+    pub fn succeed_at<T>(&mut self, position: ParsingPosition, result: T) -> ParseResult<T> {
+        self.advance_to(position);
+        ParseResult::Success(result)
+    }
+
+    pub fn fail_at<T>(
+        &mut self,
+        position: ParsingPosition,
+        expected: Vec<String>,
+    ) -> ParseResult<T> {
+        self.advance_to(position);
         ParseResult::Failure(ParseFailure::new(self.position.clone(), expected))
     }
 

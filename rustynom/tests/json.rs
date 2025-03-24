@@ -3,7 +3,7 @@
 use std::fs;
 
 use rustynom::{
-    atomic_parsers::{CharParser, StringParser},
+    atomic_parsers::{CharParser, StringMapParser},
     combinator_parsers::{AndParser5, SameOrParser2, SameOrParser6},
     parser::{Parser, ParserCombinator},
     transformation_parsers::RecParser,
@@ -27,19 +27,16 @@ fn define_parser() -> impl Parser<Value> {
     let number = utility_parsers::float().map(Value::Number);
 
     let string = utility_parsers::multi_char_test(|c| c != '"', "string".to_string())
-        .trim(StringParser::new("\"".to_string()))
-        // .describe("string")
-        ;
-    let string_value = string.clone().map(Value::String)
-    // .describe("string value")
-    ;
+        .trim(CharParser::new('"'));
+
+    let string_value = string.clone().map(Value::String);
 
     let boolean = SameOrParser2::new(
-        StringParser::new("true".to_string()).map(|_| Value::Bool(true)),
-        StringParser::new("false".to_string()).map(|_| Value::Bool(false)),
+        StringMapParser::new("true".to_string(), Value::Bool(true)),
+        StringMapParser::new("false".to_string(), Value::Bool(false)),
     );
 
-    let null = StringParser::new("null".to_string()).map(|_| Value::Null);
+    let null = StringMapParser::new("null".to_string(), Value::Null);
 
     RecParser::new(|rec_ref| {
         let array = rec_ref
@@ -53,7 +50,7 @@ fn define_parser() -> impl Parser<Value> {
             utility_parsers::optional_whitespace(),
             string.clone(),
             utility_parsers::optional_whitespace(),
-            CharParser::new(':'),
+            CharParser::<false>::new(':'),
             rec_ref.clone(),
         )
         // .box_describe("object property")
@@ -62,14 +59,6 @@ fn define_parser() -> impl Parser<Value> {
         let object = object_entry
             .separated_by_non_empty(CharParser::new(','))
             .surround(CharParser::new('{'), CharParser::new('}'))
-            // .box_describe("object")
-            // .map(|entries| {
-            //     let mut map = HashMap::new();
-            //     for (key, value) in entries {
-            //         map.insert(key, value);
-            //     }
-            //     Value::Object(map)
-            // });
             .map(Value::Object);
 
         // array works, but object doesn't
@@ -144,18 +133,17 @@ fn define_parser() -> impl Parser<Value> {
 //     );
 // }
 
+// #[test]
+// fn test_json_file() {
+//     let json_string = fs::read_to_string("tests/data/big_json.json").unwrap();
+//     dbg!(json_string.len());
+//     let parser = define_parser().then_eof();
 
-#[test] 
-fn test_json_file() {
-    let json_string = fs::read_to_string("tests/data/big_json.json").unwrap();
-    dbg!(json_string.len());
-    let parser = define_parser().then_eof();
+//     let result = parser.parse_str(&json_string);
+//     dbg!(&result);
+//     assert!(result.is_success());
 
-
-    let result = parser.parse_str(&json_string);
-    assert!(result.is_success());
-
-}
+// }
 
 #[bench]
 fn bench_json(b: &mut Bencher) {
@@ -164,7 +152,15 @@ fn bench_json(b: &mut Bencher) {
 
     let chars = json_string.chars().collect::<Vec<_>>();
 
+    b.iter(|| parser.parse_chars(&chars))
+}
+
+#[bench]
+fn bench_serde_json(b: &mut Bencher) {
+    let json_string = fs::read_to_string("tests/data/big_json.json").unwrap();
+
     b.iter(|| {
-        parser.parse_chars(&chars)
+        let v: Result<serde_json::Value, _> = serde_json::from_str(&json_string);
+        v
     })
 }

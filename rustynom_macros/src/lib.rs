@@ -101,39 +101,6 @@ pub fn and_parser(input: TokenStream) -> TokenStream {
         )
         .as_str(),
     );
-    // output.push_str("match (");
-    // output.push_str(
-    //     (1..=n)
-    //         .map(|i| format!("self.p{}.parse(context),", i))
-    //         .collect::<Vec<String>>()
-    //         .join("")
-    //         .as_str(),
-    // );
-    // output.push_str(") {");
-    // output.push_str(
-    //     format!(
-    //         "({}) => ParseResult::Success(({})),",
-    //         (1..=n)
-    //             .map(|i| format!("ParseResult::Success(p{})", i))
-    //             .collect::<Vec<String>>()
-    //             .join(", "),
-    //         (1..=n)
-    //             .map(|i| format!("p{}", i))
-    //             .collect::<Vec<String>>()
-    //             .join(", ")
-    //     )
-    //     .as_str(),
-    // );
-    // for i in 1..=n {
-    //     output.push_str(
-    //         format!(
-    //             "({}ParseResult::Failure(f),{}) => ParseResult::Failure(f),",
-    //             "_,".repeat(i - 1),
-    //             "_,".repeat(n - i)
-    //         )
-    //         .as_str(),
-    //     );
-    // }
 
     for i in 1..=n {
         output.push_str(format!("let r{} = self.p{}.parse(context);", i, i).as_str());
@@ -143,9 +110,19 @@ pub fn and_parser(input: TokenStream) -> TokenStream {
         output.push_str(format!("let s{} = r{}.unwrap_success();", i, i).as_str());
     }
 
-    output.push_str(format!("ParseResult::Success(({}))", (1..=n).map(|i| format!("s{}", i)).collect::<Vec<String>>().join(", ")).as_str());
+    output.push_str(
+        format!(
+            "ParseResult::Success(({}))",
+            (1..=n)
+                .map(|i| format!("s{}", i))
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+        .as_str(),
+    );
+    output.push_str("}");
 
-    output.push_str("}}");
+    output.push_str("}");
 
     output.parse().unwrap()
 }
@@ -263,43 +240,37 @@ pub fn or_parser(input: TokenStream) -> TokenStream {
         .as_str(),
     );
 
+    output.push_str("let initial_pos = context.position.clone();");
+
     for i in 1..n {
-        output.push_str("let mut cloned_context = context.clone();");
-        output.push_str(format!("let r{} = self.p{}.parse(&mut cloned_context);", i, i).as_str());
+        output.push_str(format!("let r{} = self.p{}.parse(context);", i, i).as_str());
         output.push_str(format!("if let ParseResult::Success(x) = r{} {{", i).as_str());
+        output.push_str(format!("return ParseResult::Success(Variant{}::V{}(x));", n, i).as_str());
+        output.push_str("} else {");
+        output.push_str("context.position = initial_pos.clone();");
+        output.push_str("}");
+    }
+
+    output.push_str(format!("let r{} = self.p{}.parse(context);", n, n).as_str());
+    output.push_str(format!("if let ParseResult::Success(x) = r{} {{", n).as_str());
+    output.push_str(format!("return ParseResult::Success(Variant{}::V{}(x));", n, n).as_str());
+    output.push('}');
+
+    output.push_str("let mut failure = r1.unwrap_failure();");
+    for i in 2..=n {
         output.push_str(
             format!(
-                "return context.succeed_at(cloned_context.position.index, Variant{}::V{}(x));",
-                n, i
+                "failure = context.merge_failures(failure, r{}.unwrap_failure());",
+                i
             )
             .as_str(),
         );
-        output.push('}');
-        if i == 1 {
-            output.push_str(format!("let mut failure = r{}.unwrap_failure();", i).as_str());
-        } else {
-            output.push_str(
-                format!(
-                    "failure = context.merge_failures(failure, r{}.unwrap_failure());",
-                    i
-                )
-                .as_str(),
-            );
-        }
     }
 
-    output.push_str(format!("match self.p{}.parse(context) {{", n).as_str());
-    output.push_str(
-        format!(
-            "ParseResult::Success(x) => ParseResult::Success(Variant{}::V{}(x)),",
-            n, n
-        )
-        .as_str(),
-    );
-    output.push_str(
-        "ParseResult::Failure(f) => ParseResult::Failure(context.merge_failures(failure, f)),",
-    );
-    output.push_str("}}}\n");
+    output.push_str(format!("ParseResult::Failure(failure)").as_str());
+    output.push_str("}");
+
+    output.push_str("}");
 
     // Same Type
 
@@ -376,32 +347,37 @@ pub fn or_parser(input: TokenStream) -> TokenStream {
         .as_str(),
     );
     output.push_str("fn parse(&self, context: &mut ParsingContext) -> ParseResult<T> {");
+    output.push_str("let initial_pos = context.position.clone();");
 
     for i in 1..n {
-        output.push_str("let mut cloned_context = context.clone();");
-        output.push_str(format!("let r{} = self.p{}.parse(&mut cloned_context);", i, i).as_str());
-        output.push_str(format!("if let ParseResult::Success(x) = r{} {{", i).as_str());
-        output.push_str("return context.succeed_at(cloned_context.position.index, x);");
-        output.push('}');
-        if i == 1 {
-            output.push_str(format!("let mut failure = r{}.unwrap_failure();", i).as_str());
-        } else {
-            output.push_str(
-                format!(
-                    "failure = context.merge_failures(failure, r{}.unwrap_failure());",
-                    i
-                )
-                .as_str(),
-            );
-        }
+        output.push_str(format!("let r{} = self.p{}.parse(context);", i, i).as_str());
+        output.push_str(format!("if r{}.is_success() {{", i).as_str());
+        output.push_str(format!("return r{};", i).as_str());
+        output.push_str("} else {");
+        output.push_str("context.position = initial_pos.clone();");
+        output.push_str("}");
     }
 
-    output.push_str(format!("match self.p{}.parse(context) {{", n).as_str());
-    output.push_str("ParseResult::Success(x) => ParseResult::Success(x),");
-    output.push_str(
-        "ParseResult::Failure(f) => ParseResult::Failure(context.merge_failures(failure, f)),",
-    );
-    output.push_str("}}}\n");
+    output.push_str(format!("let r{} = self.p{}.parse(context);", n, n).as_str());
+    output.push_str(format!("if r{}.is_success() {{", n).as_str());
+    output.push_str(format!("return r{};", n).as_str());
+    output.push('}');
+
+    output.push_str("let mut failure = r1.unwrap_failure();");
+    for i in 2..=n {
+        output.push_str(
+            format!(
+                "failure = context.merge_failures(failure, r{}.unwrap_failure());",
+                i
+            )
+            .as_str(),
+        );
+    }
+
+    output.push_str(format!("ParseResult::Failure(failure)").as_str());
+    output.push_str("}");
+
+    output.push_str("}");
 
     output.parse().unwrap()
 }

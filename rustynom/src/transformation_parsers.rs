@@ -4,7 +4,7 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{parser::RawParser, ParseResult, ParsingContext};
+use crate::{ParseResult, ParsingContext, parser::RawParser};
 
 pub struct RecRefParser<T> {
     parser_ref: Rc<RefCell<Option<Box<dyn RawParser<T>>>>>,
@@ -131,7 +131,7 @@ impl<TParser: RawParser<T>, T: Clone> RawParser<Vec<T>> for ManyParser<TParser, 
         let mut cloned_context = context.clone();
         while let ParseResult::Success(t) = self.parser.parse(&mut cloned_context) {
             result.push(t);
-            context.move_to_position(cloned_context.position.clone());
+            context.advance_to(cloned_context.position.clone());
         }
 
         context.succeed_offset(0, result)
