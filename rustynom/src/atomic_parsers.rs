@@ -1,38 +1,71 @@
-use crate::{ParseResult, ParsingContext, parser::RawParser};
+use crate::{ParseResult, ParsingPosition, parsable::Parsable, parser::RawTestParser};
 
 // ---------------
 // String parser
 // ---------------
 
 #[derive(Clone)]
-pub struct StringParser<const OUTPUT: bool = true> {
-    string: String,
-    chars: Vec<char>,
+pub struct LiteralListParser<TIn: Parsable> {
+    list: TIn::List,
+    slice: Box<[TIn::T]>,
 }
 
-impl<const OUTPUT: bool> StringParser<OUTPUT> {
-    pub fn new(string: String) -> StringParser<OUTPUT> {
-        StringParser {
-            string: string.clone(),
-            chars: string.chars().collect(),
+impl<TIn: Parsable> LiteralListParser<TIn> {
+    pub fn new(list: TIn::List) -> Self {
+        LiteralListParser {
+            list: list.clone(),
+            slice: TIn::list_to_owned_slice(list),
         }
     }
 }
 
-impl RawParser<String> for StringParser<true> {
-    fn parse(&self, context: &mut ParsingContext) -> ParseResult<String> {
-        match context.slice_from_current().starts_with(&self.chars) {
-            true => context.succeed_offset(self.chars.len(), self.string.clone()),
-            false => context.fail_offset(0, vec![self.string.clone()]),
+impl<TIn: Parsable, const ERROR: bool> RawTestParser<TIn, ERROR> for LiteralListParser<TIn> {
+    type TOut = TIn::List;
+
+    fn parse(&self, input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<TIn::List> {
+        let error = if ERROR {
+            Some(vec![TIn::list_to_string(&self.list)])
+        } else {
+            None
+        };
+
+        match position.current_eq_slice(input, &self.slice) {
+            true => position.succeed_offset(self.slice.len(), self.list.clone()),
+            false => position.fail_offset(0, error),
         }
     }
 }
 
-impl RawParser<()> for StringParser<false> {
-    fn parse(&self, context: &mut ParsingContext) -> ParseResult<()> {
-        match context.slice_from_current().starts_with(&self.chars) {
-            true => context.succeed_offset(self.chars.len(), ()),
-            false => context.fail_offset(0, vec![self.string.clone()]),
+#[derive(Clone)]
+pub struct LiteralListParserNoOutput<TIn: Parsable> {
+    list: TIn::List,
+    slice: Box<[TIn::T]>,
+}
+
+impl<TIn: Parsable> LiteralListParserNoOutput<TIn> {
+    pub fn new(list: TIn::List) -> Self {
+        LiteralListParserNoOutput {
+            list: list.clone(),
+            slice: TIn::list_to_owned_slice(list),
+        }
+    }
+}
+
+impl<TIn: Parsable, const ERROR: bool> RawTestParser<TIn, ERROR>
+    for LiteralListParserNoOutput<TIn>
+{
+    type TOut = ();
+
+    fn parse(&self, input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<()> {
+        let error = if ERROR {
+            Some(vec![TIn::list_to_string(&self.list)])
+        } else {
+            None
+        };
+
+        match position.current_eq_slice(input, &self.slice) {
+            true => position.succeed_offset(self.slice.len(), ()),
+            false => position.fail_offset(0, error),
         }
     }
 }
@@ -42,70 +75,107 @@ impl RawParser<()> for StringParser<false> {
 // ---------------
 
 #[derive(Clone)]
-pub struct StringMapParser<T: Clone> {
-    result: T,
-    string: String,
-    chars: Vec<char>,
+pub struct LiteralListMapParser<TIn: Parsable, TOut: Clone> {
+    out: TOut,
+    list: TIn::List,
+    slice: Box<[TIn::T]>,
 }
 
-impl<T: Clone> StringMapParser<T> {
-    pub fn new(string: String, result: T) -> StringMapParser<T> {
-        StringMapParser {
-            result,
-            string: string.clone(),
-            chars: string.chars().collect(),
+impl<TIn: Parsable, TOut: Clone> LiteralListMapParser<TIn, TOut> {
+    pub fn new(list: TIn::List, out: TOut) -> Self {
+        LiteralListMapParser {
+            out,
+            list: list.clone(),
+            slice: TIn::list_to_owned_slice(list),
         }
     }
 }
 
-impl<T: Clone> RawParser<T> for StringMapParser<T> {
-    fn parse(&self, context: &mut ParsingContext) -> ParseResult<T> {
-        match context.slice_from_current().starts_with(&self.chars) {
-            true => context.succeed_offset(self.chars.len(), self.result.clone()),
-            false => context.fail_offset(0, vec![self.string.clone()]),
+impl<TIn: Parsable, TOut: Clone, const ERROR: bool> RawTestParser<TIn, ERROR>
+    for LiteralListMapParser<TIn, TOut>
+{
+    type TOut = TOut;
+
+    fn parse(&self, input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<TOut> {
+        let error = if ERROR {
+            Some(vec![TIn::list_to_string(&self.list)])
+        } else {
+            None
+        };
+
+        match position.current_eq_slice(input, &self.slice) {
+            true => position.succeed_offset(self.slice.len(), self.out.clone()),
+            false => position.fail_offset(0, error),
         }
     }
 }
 
 // ---------------
-// Char parser
+// Literal parser
 // ---------------
 
 #[derive(Clone)]
-pub struct CharParser<const OUTPUT: bool = true> {
-    c: char,
+pub struct LiteralParser<TIn: Parsable> {
+    literal: TIn::T,
 }
 
-impl<const OUTPUT: bool> CharParser<OUTPUT> {
-    pub fn new(c: char) -> CharParser<OUTPUT> {
-        CharParser { c }
+impl<TIn: Parsable> LiteralParser<TIn> {
+    pub fn new(t: TIn::T) -> Self {
+        LiteralParser { literal: t }
     }
 }
 
-impl RawParser<char> for CharParser<true> {
-    fn parse(&self, context: &mut ParsingContext) -> ParseResult<char> {
-        if context.at_eof() {
-            return context.fail_offset(0, vec![self.c.to_string()]);
+impl<TIn: Parsable, const ERROR: bool> RawTestParser<TIn, ERROR> for LiteralParser<TIn> {
+    type TOut = TIn::T;
+
+    fn parse(&self, input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<TIn::T> {
+        let error = if ERROR {
+            Some(vec![TIn::t_to_string(&self.literal)])
+        } else {
+            None
+        };
+
+        if position.at_eof(input) {
+            return position.fail_offset(0, error);
         }
 
-        if &self.c == context.current() {
-            context.succeed_offset(1, self.c)
+        if position.current_eq(input, &self.literal) {
+            position.succeed_offset(1, position.current(input).clone())
         } else {
-            context.fail_offset(0, vec![self.c.to_string()])
+            position.fail_offset(0, error)
         }
     }
 }
 
-impl RawParser<()> for CharParser<false> {
-    fn parse(&self, context: &mut ParsingContext) -> ParseResult<()> {
-        if context.at_eof() {
-            return context.fail_offset(0, vec![self.c.to_string()]);
+#[derive(Clone)]
+pub struct LiteralParserNoOutput<TIn: Parsable> {
+    literal: TIn::T,
+}
+
+impl<TIn: Parsable> LiteralParserNoOutput<TIn> {
+    pub fn new(t: TIn::T) -> Self {
+        LiteralParserNoOutput { literal: t }
+    }
+}
+
+impl<TIn: Parsable, const ERROR: bool> RawTestParser<TIn, ERROR> for LiteralParserNoOutput<TIn> {
+    type TOut = ();
+
+    fn parse(&self, input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<()> {
+        let error = if ERROR {
+            Some(vec![TIn::t_to_string(&self.literal)])
+        } else {
+            None
+        };
+
+        if position.at_eof(input) {
+            return position.fail_offset(0, error);
         }
 
-        if &self.c == context.current() {
-            context.succeed_offset(1, ())
+        if position.current_eq(input, &self.literal) {
+            position.succeed_offset(1, ())
         } else {
-            context.fail_offset(0, vec![self.c.to_string()])
+            position.fail_offset(0, error)
         }
     }
 }
@@ -123,12 +193,19 @@ impl EofParser {
     }
 }
 
-impl RawParser<()> for EofParser {
-    fn parse(&self, context: &mut ParsingContext) -> ParseResult<()> {
-        if context.at_eof() {
-            context.succeed_offset(0, ())
+impl<TIn: Parsable, const ERROR: bool> RawTestParser<TIn, ERROR> for EofParser {
+    type TOut = ();
+
+    fn parse(&self, input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<()> {
+        if position.at_eof(input) {
+            position.succeed_offset(0, ())
         } else {
-            context.fail_offset(0, vec!["EOF".to_string()])
+            let error = if ERROR {
+                Some(vec!["EOF".to_string()])
+            } else {
+                None
+            };
+            position.fail_offset(0, error)
         }
     }
 }
@@ -138,19 +215,23 @@ impl RawParser<()> for EofParser {
 // ---------------
 
 #[derive(Clone)]
-pub struct SuccessParser<T: Clone> {
-    result: T,
+pub struct SuccessParser<TOut: Clone> {
+    result: TOut,
 }
 
-impl<T: Clone> SuccessParser<T> {
-    pub fn new(result: T) -> SuccessParser<T> {
+impl<TOut: Clone> SuccessParser<TOut> {
+    pub fn new(result: TOut) -> SuccessParser<TOut> {
         SuccessParser { result }
     }
 }
 
-impl<T: Clone> RawParser<T> for SuccessParser<T> {
-    fn parse(&self, context: &mut ParsingContext) -> ParseResult<T> {
-        context.succeed_offset(0, self.result.clone())
+impl<TIn: Parsable, TOut: Clone, const ERROR: bool> RawTestParser<TIn, ERROR>
+    for SuccessParser<TOut>
+{
+    type TOut = TOut;
+
+    fn parse(&self, _input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<TOut> {
+        position.succeed_offset(0, self.result.clone())
     }
 }
 
@@ -159,24 +240,39 @@ impl<T: Clone> RawParser<T> for SuccessParser<T> {
 // ---------------
 
 #[derive(Clone)]
-pub struct CustomParser<T: Clone, TFn: Fn(&mut ParsingContext) -> ParseResult<T>> {
+pub struct CustomParser<
+    TIn: Parsable,
+    TOut: Clone,
+    TFn: Fn(&[TIn::T], &mut ParsingPosition) -> ParseResult<TOut>,
+> {
     f: TFn,
-    __phantom: std::marker::PhantomData<T>,
+    __phantom1: std::marker::PhantomData<TIn>,
+    __phantom2: std::marker::PhantomData<TOut>,
 }
 
-impl<T: Clone, TFn: Fn(&mut ParsingContext) -> ParseResult<T>> CustomParser<T, TFn> {
-    pub fn new(f: TFn) -> CustomParser<T, TFn> {
+impl<'b, TIn: Parsable, TOut: Clone, TFn: Fn(&[TIn::T], &mut ParsingPosition) -> ParseResult<TOut>>
+    CustomParser<TIn, TOut, TFn>
+{
+    pub fn new(f: TFn) -> Self {
         CustomParser {
             f,
-            __phantom: std::marker::PhantomData,
+            __phantom1: std::marker::PhantomData,
+            __phantom2: std::marker::PhantomData,
         }
     }
 }
 
-impl<T: Clone, TFn: Fn(&mut ParsingContext) -> ParseResult<T>> RawParser<T>
-    for CustomParser<T, TFn>
+impl<
+    'a,
+    TIn: Parsable,
+    TOut: Clone,
+    TFn: Fn(&[TIn::T], &mut ParsingPosition) -> ParseResult<TOut>,
+    const ERROR: bool,
+> RawTestParser<TIn, ERROR> for CustomParser<TIn, TOut, TFn>
 {
-    fn parse(&self, context: &mut ParsingContext) -> ParseResult<T> {
-        (self.f)(context)
+    type TOut = TOut;
+
+    fn parse(&self, input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<TOut> {
+        (self.f)(input, position)
     }
 }

@@ -9,5 +9,6 @@ path = "src/lib.rs"
 
 [dependencies]
 fast-float = "0.2.0"
+itertools = "0.14.0"
 rustynom_macros = { path = "../rustynom_macros" }
 serde_json = "1.0.117"

@@ -4,54 +4,63 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{ParseResult, ParsingContext, parser::RawParser};
+use crate::{
+    ParseResult, ParsingPosition,
+    parsable::Parsable,
+    parser::{ParserOut, RawTestParser},
+};
 
-pub struct RecRefParser<T> {
-    parser_ref: Rc<RefCell<Option<Box<dyn RawParser<T>>>>>,
-    __phantom: std::marker::PhantomData<T>,
+pub struct RecRefParser<TIn: Parsable, TOut: Clone, const ERROR: bool> {
+    parser_ref: Rc<RefCell<Option<Box<dyn RawTestParser<TIn, ERROR, TOut = TOut>>>>>,
 }
 
-impl<T> Clone for RecRefParser<T> {
+impl<TIn: Parsable, TOut: Clone, const ERROR: bool> Clone for RecRefParser<TIn, TOut, ERROR> {
     fn clone(&self) -> Self {
         RecRefParser {
             parser_ref: self.parser_ref.clone(),
-            __phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<T> RecRefParser<T> {
-    pub fn new() -> RecRefParser<T> {
+impl<TIn: Parsable, TOut: Clone, const ERROR: bool> RecRefParser<TIn, TOut, ERROR> {
+    pub fn new() -> Self {
         RecRefParser {
             parser_ref: Rc::new(RefCell::new(None)),
-            __phantom: std::marker::PhantomData,
         }
     }
 
-    pub fn set(&self, parser: Box<dyn RawParser<T>>) {
+    pub fn set(&self, parser: Box<dyn RawTestParser<TIn, ERROR, TOut = TOut>>) {
         self.parser_ref.borrow_mut().replace(parser);
     }
 }
 
-impl<T> RawParser<T> for RecRefParser<T> {
-    fn parse(&self, context: &mut ParsingContext) -> ParseResult<T> {
+impl<TIn: Parsable, TOut: Clone, const ERROR: bool> RawTestParser<TIn, ERROR>
+    for RecRefParser<TIn, TOut, ERROR>
+{
+    type TOut
+        = TOut
+    where
+        TIn::T:;
+
+    fn parse(&self, input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<TOut> {
         self.parser_ref
             .borrow()
             .as_ref()
             .expect("RecRefParser has no parser set")
-            .parse(context)
+            .parse(input, position)
     }
 }
 
 #[derive(Clone)]
-pub struct RecParser<T> {
-    parser: RecRefParser<T>,
+pub struct RecParser<TIn: Parsable, TOut: Clone, const ERROR: bool> {
+    parser: RecRefParser<TIn, TOut, ERROR>,
 }
 
-impl<T> RecParser<T> {
-    pub fn new<TParser: RawParser<T> + 'static>(
-        decl: impl FnOnce(RecRefParser<T>) -> TParser,
-    ) -> RecParser<T> {
+impl<TIn: Parsable, TOut: Clone, const ERROR: bool> RecParser<TIn, TOut, ERROR> {
+    pub fn new<TP>(decl: impl FnOnce(RecRefParser<TIn, TOut, ERROR>) -> TP) -> Self
+    where
+        TP: RawTestParser<TIn, ERROR, TOut = TOut> + 'static,
+    {
         let rec_ref = RecRefParser::new();
 
         let parser = decl(rec_ref.clone());
@@ -62,24 +71,44 @@ impl<T> RecParser<T> {
     }
 }
 
-impl<T: Clone> RawParser<T> for RecParser<T> {
-    fn parse(&self, context: &mut ParsingContext) -> ParseResult<T> {
-        self.parser.parse(context)
+impl<TIn: Parsable, TOut: Clone, const ERROR: bool> RawTestParser<TIn, ERROR>
+    for RecParser<TIn, TOut, ERROR>
+{
+    type TOut
+        = TOut
+    where
+        TIn::T:;
+
+    fn parse(&self, input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<TOut> {
+        self.parser.parse(input, position)
     }
 }
 
 #[derive(Clone)]
-pub struct MapParser<TParser: RawParser<T>, T: Clone, TFn: (Fn(T) -> U) + Clone, U: Clone> {
-    parser: TParser,
+pub struct MapParser<
+    TIn: Parsable,
+    TOut: Clone,
+    TP: RawTestParser<TIn, ERROR>,
+    TFn: (Fn(<TP as RawTestParser<TIn, ERROR>>::TOut) -> TOut),
+    const ERROR: bool,
+> where
+    TIn::T:,
+{
+    parser: TP,
     f: TFn,
-    __phantom1: std::marker::PhantomData<T>,
-    __phantom2: std::marker::PhantomData<U>,
+    __phantom1: std::marker::PhantomData<TIn>,
+    __phantom2: std::marker::PhantomData<TOut>,
 }
 
-impl<TParser: RawParser<T>, T: Clone, TFn: (Fn(T) -> U) + Clone, U: Clone>
-    MapParser<TParser, T, TFn, U>
+impl<
+    TIn: Parsable,
+    TOut: Clone,
+    TP: RawTestParser<TIn, ERROR>,
+    TFn: (Fn(<TP as RawTestParser<TIn, ERROR>>::TOut) -> TOut),
+    const ERROR: bool,
+> MapParser<TIn, TOut, TP, TFn, ERROR>
 {
-    pub fn new(parser: TParser, f: TFn) -> MapParser<TParser, T, TFn, U> {
+    pub fn new(parser: TP, f: TFn) -> Self {
         MapParser {
             parser,
             f,
@@ -89,12 +118,22 @@ impl<TParser: RawParser<T>, T: Clone, TFn: (Fn(T) -> U) + Clone, U: Clone>
     }
 }
 
-impl<TParser: RawParser<T>, T: Clone, TFn: (Fn(T) -> U) + Clone, U: Clone> RawParser<U>
-    for MapParser<TParser, T, TFn, U>
+impl<
+    TIn: Parsable,
+    TOut: Clone,
+    TP: RawTestParser<TIn, ERROR>,
+    TFn: (Fn(<TP as RawTestParser<TIn, ERROR>>::TOut) -> TOut),
+    const ERROR: bool,
+> RawTestParser<TIn, ERROR> for MapParser<TIn, TOut, TP, TFn, ERROR>
 {
-    fn parse(&self, context: &mut ParsingContext) -> ParseResult<U> {
-        match self.parser.parse(context) {
-            ParseResult::Success(a) => ParseResult::Success((self.f)(a)),
+    type TOut
+        = TOut
+    where
+        TIn::T:;
+
+    fn parse(&self, input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<TOut> {
+        match self.parser.parse(input, position) {
+            ParseResult::Success(x) => ParseResult::Success((self.f)(x)),
             ParseResult::Failure(f) => ParseResult::Failure(f),
         }
     }
@@ -105,35 +144,112 @@ impl<TParser: RawParser<T>, T: Clone, TFn: (Fn(T) -> U) + Clone, U: Clone> RawPa
 // ---------------
 
 #[derive(Clone)]
-pub struct ManyParser<TParser, T>
-where
-    TParser: RawParser<T>,
-{
-    parser: TParser,
-    __phantom: std::marker::PhantomData<T>,
+pub struct ManyParser<TIn: Parsable, TP: RawTestParser<TIn, false>> {
+    parser: TP,
+    __phantom1: std::marker::PhantomData<TIn>,
 }
 
-impl<TParser, T> ManyParser<TParser, T>
-where
-    TParser: RawParser<T>,
-{
-    pub fn new(parser: TParser) -> ManyParser<TParser, T> {
+impl<TIn: Parsable, TP: RawTestParser<TIn, false>> ManyParser<TIn, TP> {
+    pub fn new(parser: TP) -> Self {
         ManyParser {
             parser,
-            __phantom: std::marker::PhantomData,
+            __phantom1: std::marker::PhantomData,
         }
     }
 }
 
-impl<TParser: RawParser<T>, T: Clone> RawParser<Vec<T>> for ManyParser<TParser, T> {
-    fn parse(&self, context: &mut ParsingContext) -> ParseResult<Vec<T>> {
+impl<TIn: Parsable, TP: RawTestParser<TIn, false>, const ERROR: bool> RawTestParser<TIn, ERROR>
+    for ManyParser<TIn, TP>
+{
+    type TOut
+        = Vec<ParserOut<TP, TIn, false>>
+    where
+        TIn::T:;
+
+    fn parse(&self, input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<Self::TOut> {
         let mut result = Vec::new();
-        let mut cloned_context = context.clone();
-        while let ParseResult::Success(t) = self.parser.parse(&mut cloned_context) {
+        while let ParseResult::Success(t) = self.parser.parse(input, position) {
             result.push(t);
-            context.advance_to(cloned_context.position.clone());
+        }
+        position.succeed_offset(0, result)
+    }
+}
+
+// ---------------
+// Many-non-empty parser
+// ---------------
+
+#[derive(Clone)]
+pub struct ManyNonEmptyParser<TIn: Parsable, TP: RawTestParser<TIn, ERROR>, const ERROR: bool> {
+    parser: TP,
+    __phantom1: std::marker::PhantomData<TIn>,
+}
+
+impl<TIn: Parsable, TP: RawTestParser<TIn, ERROR>, const ERROR: bool>
+    ManyNonEmptyParser<TIn, TP, ERROR>
+{
+    pub fn new(parser: TP) -> Self {
+        ManyNonEmptyParser {
+            parser,
+            __phantom1: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<TIn: Parsable, TP: RawTestParser<TIn, ERROR>, const ERROR: bool> RawTestParser<TIn, ERROR>
+    for ManyNonEmptyParser<TIn, TP, ERROR>
+{
+    type TOut
+        = Vec<ParserOut<TP, TIn, ERROR>>
+    where
+        TIn::T:;
+
+    fn parse(&self, input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<Self::TOut> {
+        let mut result = Vec::new();
+
+        match self.parser.parse(input, position) {
+            ParseResult::Success(t) => result.push(t),
+            ParseResult::Failure(f) => return ParseResult::Failure(f),
         }
 
-        context.succeed_offset(0, result)
+        while let ParseResult::Success(t) = self.parser.parse(input, position) {
+            result.push(t);
+        }
+        position.succeed_offset(0, result)
+    }
+}
+
+// ---------------
+// Optional parser
+// ---------------
+
+#[derive(Clone)]
+pub struct OptionalParser<TIn: Parsable, TP: RawTestParser<TIn, false>> {
+    parser: TP,
+    __phantom1: std::marker::PhantomData<TIn>,
+}
+
+impl<TIn: Parsable, TP: RawTestParser<TIn, false>> OptionalParser<TIn, TP> {
+    pub fn new(parser: TP) -> Self {
+        OptionalParser {
+            parser,
+            __phantom1: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<TIn: Parsable, TP: RawTestParser<TIn, false>, const ERROR: bool> RawTestParser<TIn, ERROR>
+    for OptionalParser<TIn, TP>
+{
+    type TOut
+        = Option<ParserOut<TP, TIn, false>>
+    where
+        TIn::T:;
+
+    fn parse(&self, input: &[TIn::T], position: &mut ParsingPosition) -> ParseResult<Self::TOut> {
+        match self.parser.parse(input, position) {
+            ParseResult::Success(t) => position.succeed_offset(0, Some(t)),
+            ParseResult::Failure(_) => position.succeed_offset(0, None),
+        }
     }
 }

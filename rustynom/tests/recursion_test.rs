@@ -1,13 +1,14 @@
 use rustynom::{
-    atomic_parsers::{CharParser, EofParser, StringParser},
+    atomic_parsers::{EofParser, LiteralListParser, LiteralParserNoOutput},
     combinator_parsers::{AndParser2, SameOrParser2},
-    parser::ParserCombinator,
+    parse_str,
+    parser::{ParserCombinator, ParserWrapper},
     transformation_parsers::RecParser,
 };
 
 #[test]
 fn simple_recursion() {
-    let a = StringParser::<true>::new("a".to_owned());
+    let a = LiteralListParser::new("a".to_owned());
     let mapped_eof = EofParser::new().map(|_| vec!["eof".to_owned()]);
 
     let rec = RecParser::new(|rec_ref| {
@@ -20,17 +21,19 @@ fn simple_recursion() {
         SameOrParser2::new(mapped_eof, and)
     });
 
-    let result = rec.parse_str("");
+    let p = ParserWrapper::<char, Vec<String>>::from_parser(rec);
+
+    let result = parse_str!(p, "");
     dbg!(&result);
     assert!(result.is_success());
     assert_eq!(result.unwrap_success(), vec!["eof"]);
 
-    let result = rec.parse_str("a");
+    let result = parse_str!(p, "a");
     dbg!(&result);
     assert!(result.is_success());
     assert_eq!(result.unwrap_success(), vec!["a", "eof"]);
 
-    let result = rec.parse_str("aa");
+    let result = parse_str!(p, "aa");
     dbg!(&result);
     assert!(result.is_success());
     assert_eq!(result.unwrap_success(), vec!["a", "a", "eof"]);
@@ -38,26 +41,31 @@ fn simple_recursion() {
 
 #[test]
 fn simple_recursion_2() {
-    let a = StringParser::<true>::new("a".to_owned());
+    let a = LiteralListParser::new("a".to_owned());
 
     let rec = RecParser::new(|rec_ref| {
         SameOrParser2::new(
             a,
-            rec_ref.surround(CharParser::new('['), CharParser::new(']')),
+            rec_ref.surround(
+                LiteralParserNoOutput::new('['),
+                LiteralParserNoOutput::new(']'),
+            ),
         )
     });
 
-    let result = rec.parse_str("a");
+    let p = ParserWrapper::<char, String>::from_parser(rec);
+
+    let result = parse_str!(p, "a");
     dbg!(&result);
     assert!(result.is_success());
     assert_eq!(result.unwrap_success(), "a");
 
-    let result = rec.parse_str("[a]");
+    let result = parse_str!(p, "[a]");
     dbg!(&result);
     assert!(result.is_success());
     assert_eq!(result.unwrap_success(), "a");
 
-    let result = rec.parse_str("[[a]]");
+    let result = parse_str!(p, "[[a]]");
     dbg!(&result);
     assert!(result.is_success());
     assert_eq!(result.unwrap_success(), "a");
@@ -71,29 +79,34 @@ enum Value {
 
 #[test]
 fn simple_recursion_3() {
-    let a = StringParser::<true>::new("a".to_owned()).map(Value::String);
+    let a = LiteralListParser::new("a".to_owned()).map(Value::String);
 
     let rec = RecParser::new(|rec_ref| {
         let tmp = rec_ref
-            .separated_by_non_empty(CharParser::new(','))
-            .surround(CharParser::new('['), CharParser::new(']'))
+            .separated_by(LiteralParserNoOutput::new(','))
+            .surround(
+                LiteralParserNoOutput::new('['),
+                LiteralParserNoOutput::new(']'),
+            )
             .map(Value::Array);
 
         SameOrParser2::new(a, tmp)
     });
 
-    let result = rec.parse_str("a");
+    let p = ParserWrapper::<char, Value>::from_parser(rec);
+
+    let result = parse_str!(p, "a");
     assert!(result.is_success());
     assert_eq!(result.unwrap_success(), Value::String("a".to_owned()));
 
-    let result = rec.parse_str("[a]");
+    let result = parse_str!(p, "[a]");
     assert!(result.is_success());
     assert_eq!(
         result.unwrap_success(),
         Value::Array(vec![Value::String("a".to_owned())])
     );
 
-    let result = rec.parse_str("[a,a]");
+    let result = parse_str!(p, "[a,a]");
     assert!(result.is_success());
     assert_eq!(
         result.unwrap_success(),
@@ -103,13 +116,13 @@ fn simple_recursion_3() {
         ])
     );
 
-    let result = rec.parse_str("[[a]]");
+    let result = parse_str!(p, "[[a]]");
     assert!(result.is_success());
     assert_eq!(
         result.unwrap_success(),
         Value::Array(vec![Value::Array(vec![Value::String("a".to_owned())])])
     );
 
-    let result = rec.parse_str("[b]");
+    let result = parse_str!(p, "[b]");
     assert!(result.is_failure());
 }

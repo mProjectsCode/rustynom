@@ -1,5 +1,8 @@
+use parsable::Parsable;
+
 pub mod atomic_parsers;
 pub mod combinator_parsers;
+pub mod parsable;
 pub mod parser;
 pub mod transformation_parsers;
 pub mod utility_parsers;
@@ -8,16 +11,115 @@ pub mod utility_parsers;
 pub struct ParsingPosition(usize);
 
 impl ParsingPosition {
-    pub fn new(index: usize) -> ParsingPosition {
+    pub fn new(index: usize) -> Self {
         ParsingPosition(index)
     }
 
+    #[inline]
     pub fn index(&self) -> usize {
         self.0
     }
 
     pub fn advance_by(&mut self, offset: usize) {
         self.0 += offset;
+    }
+
+    pub fn advance_to(&mut self, position: ParsingPosition) {
+        self.0 = position.0;
+    }
+
+    pub fn advance_to_index(&mut self, index: usize) {
+        self.0 = index;
+    }
+
+    pub fn slice<'a, T>(&self, slice: &'a [T]) -> &'a [T] {
+        &slice[self.index()..]
+    }
+
+    pub fn slice_to<'a, T>(&self, slice: &'a [T], index: usize) -> &'a [T] {
+        &slice[self.index()..index]
+    }
+
+    pub fn slice_with_length<'a, T>(&self, slice: &'a [T], length: usize) -> &'a [T] {
+        &slice[self.index()..self.index() + length]
+    }
+
+    pub fn current<'a, T>(&self, slice: &'a [T]) -> &'a T {
+        &slice[self.index()]
+    }
+
+    pub fn current_eq<T: Eq>(&self, slice: &[T], c: &T) -> bool {
+        if self.at_eof(slice) {
+            false
+        } else {
+            &slice[self.index()] == c
+        }
+    }
+
+    pub fn test_current<'a, T>(&self, slice: &[T], test_fn: impl Fn(&T) -> bool) -> bool {
+        if self.at_eof(slice) {
+            false
+        } else {
+            test_fn(self.current(slice))
+        }
+    }
+
+    pub fn current_eq_slice<T: Eq>(&self, slice: &[T], other: &[T]) -> bool {
+        if self.at_eof(slice) {
+            false
+        } else {
+            let current = self.slice(slice);
+            current.len() >= other.len() && current.starts_with(other)
+        }
+    }
+
+    pub fn at_eof<T>(&self, slice: &[T]) -> bool {
+        self.index() >= slice.len()
+    }
+
+    pub fn succeed_offset<T>(&mut self, offset: usize, result: T) -> ParseResult<T> {
+        self.advance_by(offset);
+        ParseResult::Success(result)
+    }
+
+    pub fn fail_offset<T>(
+        &mut self,
+        offset: usize,
+        expected: Option<Vec<String>>,
+    ) -> ParseResult<T> {
+        self.advance_by(offset);
+        ParseResult::Failure(ParseFailure::new(self.clone(), expected))
+    }
+
+    pub fn succeed_at<T>(&mut self, position: ParsingPosition, result: T) -> ParseResult<T> {
+        self.advance_to(position);
+        ParseResult::Success(result)
+    }
+
+    pub fn fail_at<T>(
+        &mut self,
+        position: ParsingPosition,
+        expected: Option<Vec<String>>,
+    ) -> ParseResult<T> {
+        self.advance_to(position);
+        ParseResult::Failure(ParseFailure::new(self.clone(), expected))
+    }
+
+    pub fn merge_failures(&self, mut a: ParseFailure, b: ParseFailure) -> ParseFailure {
+        match a.furthest.cmp(&b.furthest) {
+            std::cmp::Ordering::Less => b,
+            std::cmp::Ordering::Greater => a,
+            std::cmp::Ordering::Equal => {
+                match (&mut a.expected, b.expected) {
+                    (Some(a), Some(b)) => a.extend(b),
+                    (None, Some(b)) => a.expected = Some(b),
+                    _ => {}
+                }
+
+                // a.expected.extend(b.expected);
+                a
+            }
+        }
     }
 }
 
@@ -42,11 +144,11 @@ pub struct ParsingRange {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParseFailure {
     pub furthest: ParsingPosition,
-    pub expected: Vec<String>,
+    pub expected: Option<Vec<String>>,
 }
 
 impl ParseFailure {
-    pub fn new(furthest: ParsingPosition, expected: Vec<String>) -> ParseFailure {
+    pub fn new(furthest: ParsingPosition, expected: Option<Vec<String>>) -> ParseFailure {
         ParseFailure { furthest, expected }
     }
 }
@@ -90,111 +192,10 @@ impl<T, F> GenericParseResult<T, F> {
 
 pub type ParseResult<T> = GenericParseResult<T, ParseFailure>;
 
-#[derive(Debug, PartialEq)]
-pub struct ParsingContext<'a> {
-    input: &'a [char],
-    pub position: ParsingPosition,
-}
-
-impl<'a> Clone for ParsingContext<'a> {
-    fn clone(&self) -> Self {
-        Self {
-            input: self.input,
-            position: self.position.clone(),
-        }
-    }
-}
-
-impl<'a> ParsingContext<'a> {
-    pub fn new(input: &'a [char], position: ParsingPosition) -> ParsingContext<'a> {
-        ParsingContext { input, position }
-    }
-
-    pub fn slice_from_current(&self) -> &[char] {
-        &self.input[self.position.index()..]
-    }
-
-    pub fn slice_from_current_to(&self, index: usize) -> &[char] {
-        &self.input[self.position.index()..index]
-    }
-
-    pub fn current(&self) -> &char {
-        &self.input[self.position.index()]
-    }
-
-    pub fn current_eq(&self, c: &char) -> bool {
-        if self.at_eof() {
-            false
-        } else {
-            &self.input[self.position.index()] == c
-        }
-    }
-
-    pub fn test_current(&self, test_fn: impl Fn(char) -> bool) -> bool {
-        if self.at_eof() {
-            false
-        } else {
-            test_fn(self.input[self.position.index()])
-        }
-    }
-
-    pub fn current_eq_slice(&self, slice: &[char]) -> bool {
-        if self.at_eof() {
-            false
-        } else {
-            let current = &self.input[self.position.index()..];
-            current.len() >= slice.len() && current.starts_with(slice)
-        }
-    }
-
-    pub fn move_to_position(&mut self, position: ParsingPosition) {
-        self.position = position;
-    }
-
-    pub fn at_eof(&self) -> bool {
-        self.position.index() >= self.input.len()
-    }
-
-    fn advance_to(&mut self, position: ParsingPosition) {
-        self.position = position;
-    }
-
-    fn advance_by(&mut self, offset: usize) {
-        self.position.advance_by(offset);
-    }
-
-    pub fn succeed_offset<T>(&mut self, offset: usize, result: T) -> ParseResult<T> {
-        self.advance_by(offset);
-        ParseResult::Success(result)
-    }
-
-    pub fn fail_offset<T>(&mut self, offset: usize, expected: Vec<String>) -> ParseResult<T> {
-        self.advance_by(offset);
-        ParseResult::Failure(ParseFailure::new(self.position.clone(), expected))
-    }
-
-    pub fn succeed_at<T>(&mut self, position: ParsingPosition, result: T) -> ParseResult<T> {
-        self.advance_to(position);
-        ParseResult::Success(result)
-    }
-
-    pub fn fail_at<T>(
-        &mut self,
-        position: ParsingPosition,
-        expected: Vec<String>,
-    ) -> ParseResult<T> {
-        self.advance_to(position);
-        ParseResult::Failure(ParseFailure::new(self.position.clone(), expected))
-    }
-
-    pub fn merge_failures(&self, mut a: ParseFailure, b: ParseFailure) -> ParseFailure {
-        match a.furthest.cmp(&b.furthest) {
-            std::cmp::Ordering::Less => b,
-            std::cmp::Ordering::Greater => a,
-            std::cmp::Ordering::Equal => {
-                a.expected.extend(b.expected);
-                a
-            }
-        }
-    }
+#[macro_export]
+macro_rules! parse_str {
+    ($p:expr, $str:literal) => {{
+        let chars = $str.chars().collect::<Vec<_>>();
+        $p.parse_slice(&chars)
+    }};
 }

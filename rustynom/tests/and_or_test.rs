@@ -1,42 +1,52 @@
 use rustynom::{
-    atomic_parsers::CharParser,
+    atomic_parsers::LiteralParser,
     combinator_parsers::{AndParser2, OrParser2},
-    parser::ParserCombinator,
+    parse_str,
+    parser::ParserWrapper,
 };
 
 #[test]
 fn simple_and() {
-    let parser = AndParser2::new(CharParser::<true>::new('a'), CharParser::<true>::new('b'));
+    let parser = ParserWrapper::<char, _, true>::from_parser(AndParser2::new(
+        LiteralParser::new('a'),
+        LiteralParser::new('b'),
+    ));
 
-    let result = parser.parse_str("ab");
+    let result = parse_str!(parser, "ab");
     assert!(result.is_success());
 
-    let result = parser.parse_str("cb");
+    let result = parse_str!(parser, "cb");
     assert!(result.is_failure());
     let failure = result.unwrap_failure();
     assert_eq!(failure.furthest.index(), 0);
-    assert_eq!(failure.expected, vec!["a".to_string()]);
+    assert_eq!(failure.expected, Some(vec!["a".to_string()]));
 
-    let result = parser.parse_str("ac");
+    let result = parse_str!(parser, "ac");
     assert!(result.is_failure());
     let failure = result.unwrap_failure();
     assert_eq!(failure.furthest.index(), 1);
-    assert_eq!(failure.expected, vec!["b".to_string()]);
+    assert_eq!(failure.expected, Some(vec!["b".to_string()]));
 }
 
 #[test]
 fn simple_or() {
-    let parser = OrParser2::new(CharParser::<true>::new('a'), CharParser::<true>::new('b'));
+    let parser = ParserWrapper::<char, _, true>::from_parser(OrParser2::new(
+        LiteralParser::new('a'),
+        LiteralParser::new('b'),
+    ));
 
-    let result = parser.parse_str("a");
+    let result = parse_str!(parser, "a");
     assert!(result.is_success());
 
-    let result = parser.parse_str("b");
+    let result = parse_str!(parser, "b");
     assert!(result.is_success());
 
-    let result = parser.parse_str("c");
+    let result = parse_str!(parser, "c");
     assert!(result.is_failure());
     let failure = result.unwrap_failure();
     assert_eq!(failure.furthest.index(), 0);
-    assert_eq!(failure.expected, vec!["a".to_string(), "b".to_string()]);
+    assert_eq!(
+        failure.expected,
+        Some(vec!["a".to_string(), "b".to_string()])
+    );
 }
